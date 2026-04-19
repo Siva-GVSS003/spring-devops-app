@@ -13,7 +13,7 @@ public class HelloController {
     // run this method and return the result
     @GetMapping("/hello")
     public String hello() {
-        return "Hello from Spring Boot - DevOps Pipeline v4!";
+        return "Hello from Spring Boot - DevOps Pipeline v4-new!";
     }
 
     // A health check endpoint - useful to verify app is running
