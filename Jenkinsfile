@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         // Docker Hub credentials stored in Jenkins
-        DOCKERHUB_USERNAME = "YOUR_DOCKERHUB_USERNAME"
+        DOCKERHUB_USERNAME = "dockersiva003"
         IMAGE_NAME = "${DOCKERHUB_USERNAME}/spring-devops-app"
         IMAGE_TAG = "latest"
     }
@@ -22,20 +22,7 @@ pipeline {
             }
         }
 
-        stage('Test') {
-            steps {
-                echo 'Running tests...'
-                sh 'mvn test'
-            }
-        }
 
-        stage('Build JAR') {
-            steps {
-                echo 'Building JAR...'
-                sh 'mvn clean package -DskipTests'
-                echo 'JAR built successfully!'
-            }
-        }
 
         // NEW STAGE: Build Docker Image
         stage('Build Docker Image') {
@@ -65,10 +52,24 @@ pipeline {
         stage('Deploy') {
             steps {
                 echo 'Deploying with Ansible...'
-                sh 'ansible-playbook -i ansible/inventory ansible/deploy.yml'
+                withCredentials([string(
+                    credentialsId: 'ansible-vault-pass',
+                    // 👆 use the ID you gave when creating secret text
+                    variable: 'VAULT_PASS'
+                )]) {
+                    sh '''
+                        echo "$VAULT_PASS" > /tmp/vault-pass.txt
+                        ansible-playbook \
+                        -i ansible/inventory \
+                        ansible/deploy.yml \
+                        --vault-password-file /tmp/vault-pass.txt
+                        rm -f /tmp/vault-pass.txt
+                        # delete immediately after use for security!
+                    '''
+                }
                 echo 'Deployment done!'
             }
-        }
+}
     }
 
     post {

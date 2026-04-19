@@ -4,18 +4,26 @@
   become: yes
 
   vars:
-    docker_image: "YOUR_DOCKERHUB_USERNAME/spring-devops-app:latest"
+    docker_image: "dockersiva003/spring-devops-app:latest"
     container_name: "spring-devops-app"
     app_port: 8080
 
+  # 🔐 Load encrypted secrets
+  vars_files:
+    - secrets.yml
+
   tasks:
 
-    # TASK 1: Install pip3 (needed for docker python library)
+    # TASK 1: Install pip3 (optional, can keep/remove)
     - name: Install pip3
       apt:
         name: python3-pip
         state: present
         update_cache: yes
+
+    # 🔐 NEW: Login to Docker Hub (for private repo)
+    - name: Login to Docker Hub
+      shell: echo "{{ docker_pass }}" | docker login -u "{{ docker_user }}" --password-stdin
 
     # TASK 2: Stop and remove existing container if running
     - name: Stop existing container
@@ -28,7 +36,7 @@
     - name: Remove old Docker image
       shell: docker rmi {{ docker_image }} || true
 
-    # TASK 4: Pull latest image from Docker Hub
+    # TASK 4: Pull latest image from Docker Hub (PRIVATE now works)
     - name: Pull latest Docker image
       shell: docker pull {{ docker_image }}
 
@@ -40,10 +48,6 @@
         -p {{ app_port }}:{{ app_port }}
         --restart always
         {{ docker_image }}
-      # -d = run in background (detached)
-      # --name = give container a name
-      # -p 8080:8080 = map host port to container port
-      # --restart always = auto restart if server reboots
 
     # TASK 6: Verify container is running
     - name: Check container is running

@@ -14,7 +14,7 @@ COPY pom.xml .
 # This layer is cached unless pom.xml changes
 RUN mvn dependency:go-offline
 
-# Copy source code
+# Copy source codeg
 COPY src ./src
 
 # Build the JAR
