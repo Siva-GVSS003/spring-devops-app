@@ -17,7 +17,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 git branch: 'main',
-                    url: 'https://github.com/YOUR_GITHUB_USERNAME/spring-devops-app.git'
+                    url: 'https://github.com/Siva-GVSS003/spring-devops-app.git'
                 echo 'Code checkout done!'
             }
         }
