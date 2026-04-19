@@ -1,24 +1,27 @@
 pipeline {
     agent any
-    // 'agent any' means: run this pipeline on any available Jenkins agent
 
     tools {
         maven 'Maven'
-        // tells Jenkins to use Maven tool we configured in Global Tools
+    }
+
+    environment {
+        // Docker Hub credentials stored in Jenkins
+        DOCKERHUB_USERNAME = "YOUR_DOCKERHUB_USERNAME"
+        IMAGE_NAME = "${DOCKERHUB_USERNAME}/spring-devops-app"
+        IMAGE_TAG = "latest"
     }
 
     stages {
 
-        // STAGE 1: Get code from GitHub
         stage('Checkout') {
             steps {
                 git branch: 'main',
-                    url: 'https://github.com/Siva-GVSS003/spring-devops-app.git'
+                    url: 'https://github.com/YOUR_GITHUB_USERNAME/spring-devops-app.git'
                 echo 'Code checkout done!'
             }
         }
 
-        // STAGE 2: Run unit tests
         stage('Test') {
             steps {
                 echo 'Running tests...'
@@ -26,29 +29,51 @@ pipeline {
             }
         }
 
-        // STAGE 3: Build the JAR
-        stage('Build') {
+        stage('Build JAR') {
             steps {
                 echo 'Building JAR...'
                 sh 'mvn clean package -DskipTests'
-                echo 'Build done!'
+                echo 'JAR built successfully!'
             }
         }
 
-        // STAGE 4: Deploy using Ansible
+        // NEW STAGE: Build Docker Image
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building Docker image...'
+                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                echo 'Docker image built!'
+            }
+        }
+
+        // NEW STAGE: Push to Docker Hub
+        stage('Push to Docker Hub') {
+            steps {
+                echo 'Pushing to Docker Hub...'
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                    sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                }
+                echo 'Image pushed to Docker Hub!'
+            }
+        }
+
         stage('Deploy') {
             steps {
                 echo 'Deploying with Ansible...'
-                sh 'ansible-playbook -i /etc/ansible/devops/inventory /etc/ansible/devops/deploy.yml'
+                sh 'ansible-playbook -i ansible/inventory ansible/deploy.yml'
                 echo 'Deployment done!'
             }
         }
     }
 
-    // AFTER PIPELINE: notify result
     post {
         success {
-            echo '✅ Pipeline SUCCESS - App deployed!'
+            echo '✅ Pipeline SUCCESS - App deployed as Docker container!'
         }
         failure {
             echo '❌ Pipeline FAILED - Check the logs!'

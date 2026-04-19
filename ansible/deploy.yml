@@ -1,0 +1,55 @@
+---
+- name: Deploy Spring Boot App as Docker Container
+  hosts: appserver
+  become: yes
+
+  vars:
+    docker_image: "YOUR_DOCKERHUB_USERNAME/spring-devops-app:latest"
+    container_name: "spring-devops-app"
+    app_port: 8080
+
+  tasks:
+
+    # TASK 1: Install pip3 (needed for docker python library)
+    - name: Install pip3
+      apt:
+        name: python3-pip
+        state: present
+        update_cache: yes
+
+    # TASK 2: Stop and remove existing container if running
+    - name: Stop existing container
+      shell: docker stop {{ container_name }} || true
+
+    - name: Remove existing container
+      shell: docker rm {{ container_name }} || true
+
+    # TASK 3: Remove old image to force fresh pull
+    - name: Remove old Docker image
+      shell: docker rmi {{ docker_image }} || true
+
+    # TASK 4: Pull latest image from Docker Hub
+    - name: Pull latest Docker image
+      shell: docker pull {{ docker_image }}
+
+    # TASK 5: Run the new container
+    - name: Run Docker container
+      shell: >
+        docker run -d
+        --name {{ container_name }}
+        -p {{ app_port }}:{{ app_port }}
+        --restart always
+        {{ docker_image }}
+      # -d = run in background (detached)
+      # --name = give container a name
+      # -p 8080:8080 = map host port to container port
+      # --restart always = auto restart if server reboots
+
+    # TASK 6: Verify container is running
+    - name: Check container is running
+      shell: docker ps | grep {{ container_name }}
+      register: container_status
+
+    - name: Show container status
+      debug:
+        msg: "{{ container_status.stdout }}"
