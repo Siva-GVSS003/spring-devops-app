@@ -1,15 +1,11 @@
 pipeline {
     agent any
 
-    tools {
-        maven 'Maven'
-    }
-
     environment {
-        // Docker Hub credentials stored in Jenkins
         DOCKERHUB_USERNAME = "dockersiva003"
-        IMAGE_NAME = "${DOCKERHUB_USERNAME}/spring-devops-app"
+        IMAGE_NAME = "dockersiva003/spring-devops-app"
         IMAGE_TAG = "latest"
+        SONAR_URL = "http://SONARQUBE_PRIVATE_IP:9000"
     }
 
     stages {
@@ -22,9 +18,47 @@ pipeline {
             }
         }
 
+        // NEW: Unit Tests + Coverage Report
+        stage('Test') {
+            steps {
+                echo 'Running unit tests...'
+                sh 'mvn test jacoco:report'
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                    echo 'Test report published!'
+                }
+            }
+        }
 
+        // NEW: SonarQube Code Quality Analysis
+        stage('SonarQube Analysis') {
+            steps {
+                echo 'Running SonarQube analysis...'
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                        mvn sonar:sonar \
+                        -Dsonar.projectKey=spring-devops-app \
+                        -Dsonar.host.url=${SONAR_URL} \
+                        -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+                    '''
+                }
+                echo 'SonarQube analysis done!'
+            }
+        }
 
-        // NEW STAGE: Build Docker Image
+        // NEW: Quality Gate Check
+        stage('Quality Gate') {
+            steps {
+                echo 'Checking Quality Gate...'
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                    // if quality gate fails → pipeline stops!
+                }
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
@@ -33,7 +67,6 @@ pipeline {
             }
         }
 
-        // NEW STAGE: Push to Docker Hub
         stage('Push to Docker Hub') {
             steps {
                 echo 'Pushing to Docker Hub...'
@@ -45,7 +78,7 @@ pipeline {
                     sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
                     sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
                 }
-                echo 'Image pushed to Docker Hub!'
+                echo 'Image pushed!'
             }
         }
 
@@ -54,7 +87,6 @@ pipeline {
                 echo 'Deploying with Ansible...'
                 withCredentials([string(
                     credentialsId: 'ansible-vault-pass',
-                    // 👆 use the ID you gave when creating secret text
                     variable: 'VAULT_PASS'
                 )]) {
                     sh '''
@@ -64,20 +96,19 @@ pipeline {
                         ansible/deploy.yml \
                         --vault-password-file /tmp/vault-pass.txt
                         rm -f /tmp/vault-pass.txt
-                        # delete immediately after use for security!
                     '''
                 }
                 echo 'Deployment done!'
             }
-}
+        }
     }
 
     post {
         success {
-            echo '✅ Pipeline SUCCESS - App deployed as Docker container!'
+            echo '✅ Pipeline SUCCESS - App deployed!'
         }
         failure {
-            echo '❌ Pipeline FAILED - Check the logs!'
+            echo '❌ Pipeline FAILED - Check logs!'
         }
     }
 }
