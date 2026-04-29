@@ -5,7 +5,7 @@ pipeline {
         DOCKERHUB_USERNAME = "dockersiva003"
         IMAGE_NAME = "dockersiva003/spring-devops-app"
         IMAGE_TAG = "latest"
-        SONAR_URL = "http://SONARQUBE_PRIVATE_IP:9000"
+        SONAR_URL = "http://172.31.75.66:9000"
     }
 
     stages {
