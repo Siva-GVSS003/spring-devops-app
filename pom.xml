@@ -9,7 +9,12 @@
     <!-- WHO IS THIS PROJECT? -->
     <groupId>com.devops</groupId>       <!-- like a package/company name -->
     <artifactId>spring-devops-app</artifactId>  <!-- project name -->
-    <version>1.0</version>
+    <!--version>1.0</version --> 
+    <!-- SNAPSHOT for development builds -->
+    <version>1.0-SNAPSHOT</version>
+
+<!-- Change to this for release -->
+<!-- <version>1.0.${revision}</version> -->
     <packaging>jar</packaging>          <!-- output will be a JAR file -->
 
     <!-- INHERIT FROM SPRING BOOT PARENT -->
@@ -39,6 +44,20 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+    
+    <distributionManagement>
+        <!-- SNAPSHOT builds go here -->
+        <snapshotRepository>
+            <id>nexus-snapshots</id>
+            <url>http://172.31.36.37:8081/repository/spring-devops-snapshots/</url>
+        </snapshotRepository>
+
+        <!-- RELEASE builds go here -->
+        <repository>
+            <id>nexus-releases</id>
+            <url>http://172.31.36.37:8081/repository/spring-devops-releases/</url>
+        </repository>
+    </distributionManagement>
 
     <!-- HOW TO BUILD -->
     <build>

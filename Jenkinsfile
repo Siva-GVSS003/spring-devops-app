@@ -1,11 +1,16 @@
 pipeline {
     agent any
 
+    tools {
+        maven 'Maven'
+    }
+
     environment {
         DOCKERHUB_USERNAME = "dockersiva003"
         IMAGE_NAME = "dockersiva003/spring-devops-app"
         IMAGE_TAG = "latest"
         SONAR_URL = "http://172.31.75.66:9000"
+        NEXUS_URL = "http://172.31.36.37:8081"
     }
 
     stages {
@@ -18,7 +23,6 @@ pipeline {
             }
         }
 
-        // NEW: Unit Tests + Coverage Report
         stage('Test') {
             steps {
                 echo 'Running unit tests...'
@@ -32,7 +36,6 @@ pipeline {
             }
         }
 
-        // NEW: SonarQube Code Quality Analysis
         stage('SonarQube Analysis') {
             steps {
                 echo 'Running SonarQube analysis...'
@@ -48,14 +51,25 @@ pipeline {
             }
         }
 
-        // NEW: Quality Gate Check
         stage('Quality Gate') {
             steps {
                 echo 'Checking Quality Gate...'
                 timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
-                    // if quality gate fails → pipeline stops!
                 }
+            }
+        }
+
+        // NEW: Publish JAR to Nexus
+        stage('Publish to Nexus') {
+            steps {
+                echo 'Publishing JAR to Nexus...'
+                sh '''
+                    mvn deploy \
+                    -DskipTests \
+                    -s /var/lib/jenkins/settings.xml
+                '''
+                echo "JAR published to Nexus! ✅"
             }
         }
 
@@ -78,7 +92,7 @@ pipeline {
                     sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
                     sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
                 }
-                echo 'Image pushed!'
+                echo 'Image pushed to Docker Hub!'
             }
         }
 
@@ -105,7 +119,7 @@ pipeline {
 
     post {
         success {
-            echo '✅ Pipeline SUCCESS - App deployed!'
+            echo '✅ Pipeline SUCCESS - JAR in Nexus + App running as container!'
         }
         failure {
             echo '❌ Pipeline FAILED - Check logs!'
