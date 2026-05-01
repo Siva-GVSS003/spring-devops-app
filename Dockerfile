@@ -32,7 +32,7 @@ WORKDIR /app
 
 # Copy only the JAR from build stage
 # This keeps our final image SMALL
-COPY --from=build /app/target/spring-devops-app-1.0.jar app.jar
+COPY --from=build /app/target/*.jar app.jar
 
 # Tell Docker our app runs on port 8080
 EXPOSE 8080
