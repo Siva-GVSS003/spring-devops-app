@@ -13,8 +13,7 @@
     <!-- SNAPSHOT for development builds -->
     <version>1.0-SNAPSHOT</version>
 
-<!-- Change to this for release -->
-<!-- <version>1.0.${revision}</version> -->
+
     <packaging>jar</packaging>          <!-- output will be a JAR file -->
 
     <!-- INHERIT FROM SPRING BOOT PARENT -->
