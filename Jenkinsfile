@@ -8,7 +8,7 @@ pipeline {
     environment {
         DOCKERHUB_USERNAME = "dockersiva003"
         IMAGE_NAME = "dockersiva003/spring-devops-app"
-        IMAGE_TAG = "latest"
+        IMAGE_TAG = "${BUILD_NUMBER}"
         SONAR_URL = "http://172.31.75.66:9000"
         NEXUS_URL = "http://172.31.36.37:8081"
     }
@@ -19,7 +19,7 @@ pipeline {
             steps {
                 git branch: 'main',
                     url: 'https://github.com/Siva-GVSS003/spring-devops-app.git'
-                echo 'Code checkout done!'
+                echo "Checked out branch: ${env.BRANCH_NAME}"
             }
         }
 
@@ -77,7 +77,7 @@ pipeline {
             steps {
                 echo 'Building Docker image...'
                 sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
-                echo 'Docker image built!'
+                echo "Built image: ${IMAGE_NAME}:${IMAGE_TAG}"
             }
         }
 
@@ -96,33 +96,90 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+         stage('Deploy to DEV') {
+            when {
+                branch 'dev'
+            }
             steps {
-                echo 'Deploying with Ansible...'
+                echo '🚀 Deploying to DEV environment...'
                 withCredentials([string(
                     credentialsId: 'ansible-vault-pass',
                     variable: 'VAULT_PASS'
                 )]) {
-                    sh '''
-                        echo "$VAULT_PASS" > /tmp/vault-pass.txt
+                    sh """
+                        echo "\$VAULT_PASS" > /tmp/vault-pass.txt
                         ansible-playbook \
                         -i ansible/inventory \
                         ansible/deploy.yml \
+                        -e target_env=dev \
+                        -e image_tag=${IMAGE_TAG} \
                         --vault-password-file /tmp/vault-pass.txt
                         rm -f /tmp/vault-pass.txt
-                    '''
+                    """
                 }
-                echo 'Deployment done!'
+                echo '✅ Deployed to DEV!'
+            }
+        }
+
+        // Deploy to STAGING — only on staging branch
+        stage('Deploy to STAGING') {
+            when {
+                branch 'staging'
+            }
+            steps {
+                echo '🚀 Deploying to STAGING environment...'
+                withCredentials([string(
+                    credentialsId: 'ansible-vault-pass',
+                    variable: 'VAULT_PASS'
+                )]) {
+                    sh """
+                        echo "\$VAULT_PASS" > /tmp/vault-pass.txt
+                        ansible-playbook \
+                        -i ansible/inventory \
+                        ansible/deploy.yml \
+                        -e target_env=staging \
+                        -e image_tag=${IMAGE_TAG} \
+                        --vault-password-file /tmp/vault-pass.txt
+                        rm -f /tmp/vault-pass.txt
+                    """
+                }
+                echo '✅ Deployed to STAGING!'
+            }
+        }
+
+        // Deploy to PROD — only on main branch
+        stage('Deploy to PROD') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo '🚀 Deploying to PROD environment...'
+                withCredentials([string(
+                    credentialsId: 'ansible-vault-pass',
+                    variable: 'VAULT_PASS'
+                )]) {
+                    sh """
+                        echo "\$VAULT_PASS" > /tmp/vault-pass.txt
+                        ansible-playbook \
+                        -i ansible/inventory \
+                        ansible/deploy.yml \
+                        -e target_env=prod \
+                        -e image_tag=${IMAGE_TAG} \
+                        --vault-password-file /tmp/vault-pass.txt
+                        rm -f /tmp/vault-pass.txt
+                    """
+                }
+                echo '✅ Deployed to PROD!'
             }
         }
     }
 
     post {
         success {
-            echo '✅ Pipeline SUCCESS - JAR in Nexus + App running as container!'
+            echo "✅ Pipeline SUCCESS on branch: ${env.BRANCH_NAME}"
         }
         failure {
-            echo '❌ Pipeline FAILED - Check logs!'
+            echo "❌ Pipeline FAILED on branch: ${env.BRANCH_NAME}"
         }
     }
 }

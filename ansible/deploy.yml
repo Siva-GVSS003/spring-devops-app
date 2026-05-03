@@ -1,10 +1,10 @@
 ---
 - name: Deploy Spring Boot App as Docker Container
-  hosts: appserver
+  hosts: "{{ target_env }}"
   become: yes
 
   vars:
-    docker_image: "dockersiva003/spring-devops-app:latest"
+    docker_image: "dockersiva003/spring-devops-app:{{ image_tag }}"
     container_name: "spring-devops-app"
     app_port: 8080
 
