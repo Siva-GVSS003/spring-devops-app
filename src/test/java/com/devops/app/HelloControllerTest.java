@@ -20,7 +20,7 @@ public class HelloControllerTest {
         mockMvc.perform(get("/hello"))
             .andExpect(status().isOk())
             .andExpect(content().string(
-                "Hello from Spring Boot - DevOps dev Pipeline v1!"));
+                "Hello from Spring Boot - DevOps dev Pipeline v2!"));
     }
 
     @Test
