@@ -8,7 +8,7 @@ pipeline {
     environment {
         DOCKERHUB_USERNAME = "dockersiva003"
         IMAGE_NAME = "dockersiva003/spring-devops-app"
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        IMAGE_TAG = "${env.BRANCH_NAME}-${BUILD_NUMBER}"
         SONAR_URL = "http://172.31.75.66:9000"
         NEXUS_URL = "http://172.31.36.37:8081"
     }
