@@ -8,7 +8,11 @@ pipeline {
     environment {
         DOCKERHUB_USERNAME = "dockersiva003"
         IMAGE_NAME = "dockersiva003/spring-devops-app"
+
         IMAGE_TAG = "${env.BRANCH_NAME}-${BUILD_NUMBER}"
+
+        //IMAGE_TAG = "${env.BRANCH_NAME}-${BUILD_NUMBER}"
+
         SONAR_URL = "http://172.31.75.66:9000"
         NEXUS_URL = "http://172.31.36.37:8081"
     }
@@ -17,39 +21,56 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'main',
+                git branch: "${env.BRANCH_NAME}",
                     url: 'https://github.com/Siva-GVSS003/spring-devops-app.git'
                 echo "Checked out branch: ${env.BRANCH_NAME}"
             }
         }
-
-        stage('Test') {
+        stage('Set Version') {
             steps {
-                echo 'Running unit tests...'
-                sh 'mvn test jacoco:report'
+                script {
+                    if (env.BRANCH_NAME == 'main') {
+                        // PROD → stable release version
+                        env.APP_VERSION = "1.0.${BUILD_NUMBER}"
+                        env.IMAGE_TAG = "1.0.${BUILD_NUMBER}"
+                        env.NEXUS_REPO = "nexus-releases"
+                        echo "PROD Release version: ${env.APP_VERSION}"
+                    } else {
+                        // DEV/STAGING → snapshot version
+                        env.APP_VERSION = "1.0-SNAPSHOT"
+                        env.IMAGE_TAG = "${env.BRANCH_NAME}-${BUILD_NUMBER}"
+                        env.NEXUS_REPO = "nexus-snapshots"
+                        echo "SNAPSHOT version: ${env.APP_VERSION}"
+                    }
+                }
+            }
+        }
+
+         stage('Test') {
+            steps {
+                sh "mvn test jacoco:report -Drevision=${env.APP_VERSION}"
             }
             post {
                 always {
                     junit '**/target/surefire-reports/*.xml'
-                    echo 'Test report published!'
                 }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                echo 'Running SonarQube analysis...'
                 withSonarQubeEnv('SonarQube') {
-                    sh '''
+                    sh """
                         mvn sonar:sonar \
+                        -Drevision=${env.APP_VERSION} \
                         -Dsonar.projectKey=spring-devops-app \
                         -Dsonar.host.url=${SONAR_URL} \
                         -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
-                    '''
+                    """
                 }
-                echo 'SonarQube analysis done!'
             }
         }
+
 
         stage('Quality Gate') {
             steps {
@@ -63,21 +84,27 @@ pipeline {
         // NEW: Publish JAR to Nexus
         stage('Publish to Nexus') {
             steps {
-                echo 'Publishing JAR to Nexus...'
-                sh '''
+                script {
+                    if (env.BRANCH_NAME == 'main') {
+                        echo "Publishing RELEASE ${env.APP_VERSION} to nexus-releases..."
+                    } else {
+                        echo "Publishing SNAPSHOT ${env.APP_VERSION} to nexus-snapshots..."
+                    }
+                }
+                sh """
                     mvn deploy \
+                    -Drevision=${env.APP_VERSION} \
                     -DskipTests \
                     -s /var/lib/jenkins/settings.xml
-                '''
-                echo "JAR published to Nexus! ✅"
+                """
+                echo "✅ Published to Nexus!"
             }
         }
-
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
-                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
-                echo "Built image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                sh "docker build -t ${IMAGE_NAME}:${env.IMAGE_TAG} ."
+                echo "Built image: ${IMAGE_NAME}:${env.IMAGE_TAG}"
             }
         }
 
@@ -90,7 +117,7 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
-                    sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                    sh "docker push ${IMAGE_NAME}:${env.IMAGE_TAG}"
                 }
                 echo 'Image pushed to Docker Hub!'
             }
@@ -112,7 +139,7 @@ pipeline {
                         -i ansible/inventory \
                         ansible/deploy.yml \
                         -e target_env=dev \
-                        -e image_tag=${IMAGE_TAG} \
+                        -e image_tag=${env.IMAGE_TAG} \
                         --vault-password-file /tmp/vault-pass.txt
                         rm -f /tmp/vault-pass.txt
                     """
@@ -138,7 +165,7 @@ pipeline {
                         -i ansible/inventory \
                         ansible/deploy.yml \
                         -e target_env=staging \
-                        -e image_tag=${IMAGE_TAG} \
+                        -e image_tag=${env.IMAGE_TAG} \
                         --vault-password-file /tmp/vault-pass.txt
                         rm -f /tmp/vault-pass.txt
                     """
@@ -164,7 +191,7 @@ pipeline {
                         -i ansible/inventory \
                         ansible/deploy.yml \
                         -e target_env=prod \
-                        -e image_tag=${IMAGE_TAG} \
+                        -e image_tag=${env.IMAGE_TAG} \
                         --vault-password-file /tmp/vault-pass.txt
                         rm -f /tmp/vault-pass.txt
                     """
@@ -176,7 +203,7 @@ pipeline {
 
     post {
         success {
-            echo "✅ Pipeline SUCCESS on branch: ${env.BRANCH_NAME}"
+            echo "✅ SUCCESS - Branch: ${env.BRANCH_NAME} - Version: ${env.APP_VERSION} - Image: ${IMAGE_NAME}:${env.IMAGE_TAG}"
         }
         failure {
             echo "❌ Pipeline FAILED on branch: ${env.BRANCH_NAME}"
