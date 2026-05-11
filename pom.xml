@@ -11,7 +11,7 @@
     <artifactId>spring-devops-app</artifactId>  <!-- project name -->
     <!--version>1.0</version --> 
     <!-- SNAPSHOT for development builds -->
-    <version>1.0-SNAPSHOT</version>
+    <version>${revision}</version>
 
 
     <packaging>jar</packaging>          <!-- output will be a JAR file -->
