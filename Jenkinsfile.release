@@ -1,0 +1,136 @@
+pipeline {
+    agent any
+
+    // Manual input — team lead selects version to release
+    parameters {
+        string(
+            name: 'RELEASE_VERSION',
+            defaultValue: '',
+            description: 'Enter version to release (e.g. 1.0.14)'
+        )
+    }
+
+    environment {
+        IMAGE_NAME = "dockersiva003/spring-devops-app"
+    }
+
+    stages {
+
+        stage('Validate Release Version') {
+            steps {
+                script {
+                    if (params.RELEASE_VERSION == '') {
+                        error "RELEASE_VERSION is required! e.g. 1.0.14"
+                    }
+                    // Verify image exists in Docker Hub
+                    echo "🔍 Validating version: ${params.RELEASE_VERSION}"
+                    sh """
+                        docker pull ${IMAGE_NAME}:${params.RELEASE_VERSION} || \
+                        (echo "❌ Image not found in Docker Hub!" && exit 1)
+                    """
+                    echo "✅ Version ${params.RELEASE_VERSION} validated!"
+                }
+            }
+        }
+
+        // Manual approval before PROD deploy!
+        stage('Approval Gate') {
+            steps {
+                script {
+                    echo "⏳ Waiting for approval to deploy ${params.RELEASE_VERSION} to PROD..."
+                    timeout(time: 30, unit: 'MINUTES') {
+                        input message: """
+                            🚀 Deploy version ${params.RELEASE_VERSION} to PRODUCTION?
+
+                            Please verify:
+                            ✅ Tested in DEV
+                            ✅ Tested in STAGING
+                            ✅ QA approved
+                            ✅ Business approved
+                        """,
+                        ok: 'Yes, Deploy to PROD!'
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to PROD') {
+            steps {
+                echo "🚀 Deploying RELEASE ${params.RELEASE_VERSION} to PROD..."
+                withCredentials([string(
+                    credentialsId: 'ansible-vault-pass',
+                    variable: 'VAULT_PASS'
+                )]) {
+                    sh """
+                        echo "\$VAULT_PASS" > /tmp/vault-pass.txt
+                        ansible-playbook \
+                        -i ansible/inventory \
+                        ansible/deploy.yml \
+                        -e target_env=prod \
+                        -e image_tag=${params.RELEASE_VERSION} \
+                        --vault-password-file /tmp/vault-pass.txt
+                        rm -f /tmp/vault-pass.txt
+                    """
+                }
+                echo "✅ PROD deployed - ${params.RELEASE_VERSION}"
+            }
+        }
+
+        // Health check on PROD
+        stage('PROD Health Check') {
+            steps {
+                script {
+                    echo "🏥 Checking PROD health..."
+                    sleep(20)
+
+                    def response = sh(
+                        script: "curl -s -o /dev/null -w '%{http_code}' http://172.31.24.75:8080/health",
+                        returnStdout: true
+                    ).trim()
+
+                    if (response == '200') {
+                        echo "✅ PROD Health Check PASSED!"
+                    } else {
+                        echo "❌ PROD Health Check FAILED! Triggering rollback..."
+                        error "Health check failed - rollback will start!"
+                    }
+                }
+            }
+        }
+
+        // Auto rollback if health check fails!
+        stage('Rollback if Failed') {
+            when {
+                expression { currentBuild.result == 'FAILURE' }
+            }
+            steps {
+                echo "⏪ Rolling back PROD..."
+                withCredentials([string(
+                    credentialsId: 'ansible-vault-pass',
+                    variable: 'VAULT_PASS'
+                )]) {
+                    sh """
+                        echo "\$VAULT_PASS" > /tmp/vault-pass.txt
+                        ansible-playbook \
+                        -i ansible/inventory \
+                        ansible/deploy.yml \
+                        -e target_env=prod \
+                        -e image_tag=previous-stable \
+                        --vault-password-file /tmp/vault-pass.txt
+                        rm -f /tmp/vault-pass.txt
+                    """
+                }
+                echo "✅ Rollback complete!"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "🎉 RELEASE SUCCESS - Version ${params.RELEASE_VERSION} is LIVE in PROD!"
+        }
+        failure {
+            echo "❌ RELEASE FAILED - Check logs and verify PROD status!"
+        }
+    }
+}

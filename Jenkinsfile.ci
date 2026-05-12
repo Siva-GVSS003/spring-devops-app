@@ -1,0 +1,130 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'Maven'
+    }
+
+    environment {
+        DOCKERHUB_USERNAME = "dockersiva003"
+        IMAGE_NAME = "dockersiva003/spring-devops-app"
+        SONAR_URL = "http://172.31.75.66:9000"
+        NEXUS_URL = "http://172.31.36.37:8081"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: "${env.BRANCH_NAME}",
+                    url: 'https://github.com/Siva-GVSS003/spring-devops-app.git'
+                echo "🔀 Branch: ${env.BRANCH_NAME}"
+            }
+        }
+
+        stage('Set Version') {
+            steps {
+                script {
+                    if (env.BRANCH_NAME == 'main') {
+                        env.APP_VERSION = "1.0.${BUILD_NUMBER}"
+                        env.IMAGE_TAG = "1.0.${BUILD_NUMBER}"
+                        env.NEXUS_REPO = "nexus-releases"
+                    } else {
+                        env.APP_VERSION = "1.0-SNAPSHOT"
+                        env.IMAGE_TAG = "${env.BRANCH_NAME}-${BUILD_NUMBER}"
+                        env.NEXUS_REPO = "nexus-snapshots"
+                    }
+                    echo "📦 Version: ${env.APP_VERSION}"
+                    echo "🐳 Image Tag: ${env.IMAGE_TAG}"
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo '🧪 Running tests...'
+                sh "mvn test jacoco:report -Drevision=${env.APP_VERSION}"
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                echo '🔍 Running SonarQube...'
+                withSonarQubeEnv('SonarQube') {
+                    sh """
+                        mvn sonar:sonar \
+                        -Drevision=${env.APP_VERSION} \
+                        -Dsonar.projectKey=spring-devops-app \
+                        -Dsonar.host.url=${SONAR_URL} \
+                        -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+                    """
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Publish to Nexus') {
+            steps {
+                echo "📤 Publishing ${env.APP_VERSION} to ${env.NEXUS_REPO}..."
+                sh """
+                    mvn deploy \
+                    -Drevision=${env.APP_VERSION} \
+                    -DskipTests \
+                    -s /var/lib/jenkins/settings.xml
+                """
+                echo "✅ Published to Nexus!"
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo "🐳 Building image: ${IMAGE_NAME}:${env.IMAGE_TAG}"
+                sh "docker build -t ${IMAGE_NAME}:${env.IMAGE_TAG} ."
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                    sh "docker push ${IMAGE_NAME}:${env.IMAGE_TAG}"
+                }
+                echo "✅ Pushed: ${IMAGE_NAME}:${env.IMAGE_TAG}"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ CI SUCCESS - ${env.BRANCH_NAME} - ${env.IMAGE_TAG}"
+
+            // Trigger CD pipeline automatically after CI success!
+            build job: 'spring-devops-cd',
+                parameters: [
+                    string(name: 'IMAGE_TAG', value: "${env.IMAGE_TAG}"),
+                    string(name: 'BRANCH_NAME', value: "${env.BRANCH_NAME}")
+                ],
+                wait: false
+            // wait: false = CI doesn't wait for CD to finish
+        }
+        failure {
+            echo "❌ CI FAILED - ${env.BRANCH_NAME}"
+        }
+    }
+}

@@ -1,0 +1,115 @@
+pipeline {
+    agent any
+
+    // Parameters passed from CI pipeline
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Docker image tag to deploy')
+        string(name: 'BRANCH_NAME', defaultValue: 'dev', description: 'Branch that triggered CI')
+    }
+
+    environment {
+        IMAGE_NAME = "dockersiva003/spring-devops-app"
+    }
+
+    stages {
+
+        stage('Validate Input') {
+            steps {
+                script {
+                    if (params.IMAGE_TAG == '') {
+                        error "IMAGE_TAG is required!"
+                    }
+                    echo "🚀 Deploying: ${IMAGE_NAME}:${params.IMAGE_TAG}"
+                    echo "🌿 Branch: ${params.BRANCH_NAME}"
+                }
+            }
+        }
+
+        stage('Deploy to DEV') {
+            when {
+                expression { params.BRANCH_NAME == 'dev' }
+            }
+            steps {
+                echo "🚀 Deploying to DEV - ${params.IMAGE_TAG}"
+                withCredentials([string(
+                    credentialsId: 'ansible-vault-pass',
+                    variable: 'VAULT_PASS'
+                )]) {
+                    sh """
+                        echo "\$VAULT_PASS" > /tmp/vault-pass.txt
+                        ansible-playbook \
+                        -i ansible/inventory \
+                        ansible/deploy.yml \
+                        -e target_env=dev \
+                        -e image_tag=${params.IMAGE_TAG} \
+                        --vault-password-file /tmp/vault-pass.txt
+                        rm -f /tmp/vault-pass.txt
+                    """
+                }
+                echo "✅ DEV deployed!"
+            }
+        }
+
+        stage('Deploy to STAGING') {
+            when {
+                expression { params.BRANCH_NAME == 'staging' }
+            }
+            steps {
+                echo "🚀 Deploying to STAGING - ${params.IMAGE_TAG}"
+                withCredentials([string(
+                    credentialsId: 'ansible-vault-pass',
+                    variable: 'VAULT_PASS'
+                )]) {
+                    sh """
+                        echo "\$VAULT_PASS" > /tmp/vault-pass.txt
+                        ansible-playbook \
+                        -i ansible/inventory \
+                        ansible/deploy.yml \
+                        -e target_env=staging \
+                        -e image_tag=${params.IMAGE_TAG} \
+                        --vault-password-file /tmp/vault-pass.txt
+                        rm -f /tmp/vault-pass.txt
+                    """
+                }
+                echo "✅ STAGING deployed!"
+            }
+        }
+
+        // Health check after deployment
+        stage('Health Check') {
+            steps {
+                script {
+                    def serverIP = ""
+                    if (params.BRANCH_NAME == 'dev') {
+                        serverIP = "172.31.47.242"
+                    } else if (params.BRANCH_NAME == 'staging') {
+                        serverIP = "172.31.38.154"
+                    }
+
+                    echo "🏥 Checking health of ${serverIP}..."
+                    sleep(15) // wait for app to start
+
+                    def response = sh(
+                        script: "curl -s -o /dev/null -w '%{http_code}' http://${serverIP}:8080/health",
+                        returnStdout: true
+                    ).trim()
+
+                    if (response == '200') {
+                        echo "✅ Health check PASSED - App is UP!"
+                    } else {
+                        error "❌ Health check FAILED - HTTP ${response}"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ CD SUCCESS - ${params.BRANCH_NAME} - ${params.IMAGE_TAG}"
+        }
+        failure {
+            echo "❌ CD FAILED - ${params.BRANCH_NAME} - ${params.IMAGE_TAG}"
+        }
+    }
+}
